@@ -386,6 +386,35 @@ textarea:focus {
   color: var(--navy);
 }
 
+.phone-input-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.phone-prefix {
+  background: #f7f8fd;
+  color: var(--navy);
+  padding: 14px 16px;
+  font-weight: 800;
+  border-left: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.phone-input-wrap input {
+  border: none;
+  border-radius: 0;
+  box-shadow: none !important;
+}
+
+.phone-input-wrap:focus-within {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(240, 143, 29, 0.15);
+}
+
 .full-span {
   grid-column: 1 / -1;
 }
@@ -687,6 +716,34 @@ thead th {
   }
 }
 
+@media (max-width: 992px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding: 16px;
+  }
+
+  .sidebar nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .nav-btn {
+    margin-bottom: 0;
+    text-align: center;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 768px) {
   .hero-panel,
   .login-panel,
@@ -710,6 +767,34 @@ thead th {
   .modal-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .stats-grid,
+  .sidebar nav,
+  .edit-summary {
+    grid-template-columns: 1fr;
+  }
+
+  table {
+    min-width: 980px;
+  }
+
+  .table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal-card {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .option-chip {
+    width: 100%;
+    text-align: center;
+  }
+
+  .phone-input-wrap {
+    flex-direction: row-reverse;
   }
 }
 

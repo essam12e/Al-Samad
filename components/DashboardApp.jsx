@@ -25,6 +25,7 @@ const subscriptionTypeOptions = [
   'شريحة STC اعمال',
 ]
 const durationOptions = [1, 2, 3, 6, 12]
+const SAUDI_COUNTRY_CODE = '966'
 
 const addMonths = (dateString, months) => {
   const date = new Date(dateString)
@@ -211,9 +212,23 @@ const withStatus = (customer) => {
 }
 
 const sanitizePhoneNumber = (value) => String(value || '').replace(/[^\d]/g, '')
+const extractLocalSaudiPhone = (value) => {
+  let digits = sanitizePhoneNumber(value)
+  if (digits.startsWith(SAUDI_COUNTRY_CODE)) digits = digits.slice(SAUDI_COUNTRY_CODE.length)
+  digits = digits.replace(/^0+/, '')
+  return digits
+}
+const buildSaudiWhatsAppNumber = (value) => {
+  const local = extractLocalSaudiPhone(value)
+  return local ? `${SAUDI_COUNTRY_CODE}${local}` : ''
+}
+const displaySaudiPhone = (value) => {
+  const local = extractLocalSaudiPhone(value)
+  return local ? `+${SAUDI_COUNTRY_CODE} ${local}` : '-'
+}
 const createCustomerDraft = (customer) => ({
   name: customer.name || '',
-  customerPhone: customer.customerPhone || '',
+  customerPhone: extractLocalSaudiPhone(customer.customerPhone || ''),
   serialNumber: customer.serialNumber || '',
   serviceNumber: customer.serviceNumber || '',
   orderNumber: customer.orderNumber || '',
@@ -321,7 +336,7 @@ export default function DashboardApp() {
   const handleCustomerSubmit = (event) => {
     event.preventDefault()
     const durationMonths = Number(customerForm.durationMonths)
-    const customerPhone = sanitizePhoneNumber(customerForm.customerPhone)
+    const customerPhone = buildSaudiWhatsAppNumber(customerForm.customerPhone)
     if (!durationMonths || durationMonths < 1) {
       setMessage('أدخل مدة اشتراك صحيحة بالشهور')
       return
@@ -360,7 +375,7 @@ export default function DashboardApp() {
     event.preventDefault()
     if (!editingCustomer) return
     const durationMonths = Number(editForm.durationMonths)
-    const customerPhone = sanitizePhoneNumber(editForm.customerPhone)
+    const customerPhone = buildSaudiWhatsAppNumber(editForm.customerPhone)
     if (!durationMonths || durationMonths < 1) {
       setMessage('أدخل مدة اشتراك صحيحة بالشهور')
       return
@@ -478,13 +493,13 @@ export default function DashboardApp() {
   }
 
   const openWhatsApp = (customer) => {
-    const whatsappNumber = sanitizePhoneNumber(customer.customerPhone)
+    const whatsappNumber = buildSaudiWhatsAppNumber(customer.customerPhone)
     if (!whatsappNumber) {
       setMessage('رقم العميل غير صالح للواتساب')
       return
     }
     const text = encodeURIComponent(
-      `مرحباً ${customer.name}، نود تذكيركم بأن اشتراك ${customer.subscriptionType} سينتهي بتاريخ ${customer.endDate}.`,
+      `مرحباً ${customer.name}، نود تذكيركم بأن اشتراكك في ${customer.subscriptionType} سينتهي بتاريخ ${formatDate(customer.endDate)}\nلتجديد ارسل الرقم 7 مع ارسال ايصال التحويل`,
     )
     window.open(`https://wa.me/${whatsappNumber}?text=${text}`, '_blank', 'noopener,noreferrer')
   }
@@ -517,7 +532,7 @@ export default function DashboardApp() {
         .map((item) => ({
           'اسم العميل': item.name,
           'الرقم التسلسلي للشريحة': item.serialNumber,
-          'رقم العميل': item.customerPhone,
+          'رقم العميل': displaySaudiPhone(item.customerPhone),
           'رقم الخدمة': item.serviceNumber || '-',
           'رقم الطلب': item.orderNumber,
           'نوع الاشتراك': item.subscriptionType,
@@ -568,7 +583,7 @@ export default function DashboardApp() {
       (appState.deletedCustomers || []).map((item) => ({
         'اسم العميل': item.customerName,
         'الرقم التسلسلي للشريحة': item.serialNumber,
-        'رقم العميل': item.customerPhone || '-',
+        'رقم العميل': displaySaudiPhone(item.customerPhone),
         'رقم الخدمة': item.serviceNumber || '-',
         'رقم الطلب': item.orderNumber,
         'سبب الحذف': item.reason,
@@ -713,7 +728,7 @@ export default function DashboardApp() {
                     <div key={customer.id} className="alert-card">
                       <strong>{customer.name}</strong>
                       <span>متبقي {customer.daysLeft} يوم - {customer.subscriptionType}</span>
-                      <span>رقم العميل: {customer.customerPhone}</span>
+                      <span>رقم العميل: {displaySaudiPhone(customer.customerPhone)}</span>
                       <span>الرقم التسلسلي للشريحة: {customer.serialNumber}</span>
                       <span>رقم الطلب: {customer.orderNumber}</span>
                       <div className="row-actions">
@@ -752,9 +767,9 @@ export default function DashboardApp() {
                 <tbody>
                   {filteredCustomers.map((customer) => (
                     <tr key={customer.id}>
-                      <td><strong>{customer.name}</strong><span className="cell-note">{customer.customerPhone}</span></td>
+                      <td><strong>{customer.name}</strong><span className="cell-note">{displaySaudiPhone(customer.customerPhone)}</span></td>
                       <td>{customer.serialNumber}</td>
-                      <td>{customer.customerPhone}</td>
+                      <td>{displaySaudiPhone(customer.customerPhone)}</td>
                       <td>{customer.serviceNumber || '-'}</td>
                       <td>{customer.orderNumber}</td>
                       <td>{customer.subscriptionType}</td>
@@ -781,7 +796,7 @@ export default function DashboardApp() {
                 <div key={customer.id} className="alert-card wide">
                   <div>
                     <strong>{customer.name}</strong>
-                    <p>الرقم التسلسلي للشريحة: {customer.serialNumber} — رقم العميل: {customer.customerPhone}</p>
+                    <p>الرقم التسلسلي للشريحة: {customer.serialNumber} — رقم العميل: {displaySaudiPhone(customer.customerPhone)}</p>
                     <p>رقم الخدمة: {customer.serviceNumber || '-'}</p>
                     <p>رقم الطلب: {customer.orderNumber}</p>
                     <p>المتبقي: {customer.daysLeft} يوم — ينتهي بتاريخ {formatDate(customer.endDate)}</p>
@@ -890,7 +905,7 @@ export default function DashboardApp() {
             <div className="edit-summary">
               <div><span>العميل</span><strong>{editingCustomer.name}</strong></div>
               <div><span>الرقم التسلسلي</span><strong>{editingCustomer.serialNumber}</strong></div>
-              <div><span>رقم العميل</span><strong>{editingCustomer.customerPhone}</strong></div>
+              <div><span>رقم العميل</span><strong>{displaySaudiPhone(editingCustomer.customerPhone)}</strong></div>
               <div><span>رقم الخدمة</span><strong>{editingCustomer.serviceNumber || '-'}</strong></div>
             </div>
 
@@ -924,7 +939,7 @@ export default function DashboardApp() {
                 <div><strong>اسم العميل</strong><span>{invoiceCustomer.name}</span></div>
                 <div><strong>الرقم التسلسلي للشريحة</strong><span>{invoiceCustomer.serialNumber}</span></div>
                 <div><strong>رقم الطلب</strong><span>{invoiceCustomer.orderNumber}</span></div>
-                <div><strong>رقم العميل</strong><span>{invoiceCustomer.customerPhone}</span></div>
+                <div><strong>رقم العميل</strong><span>{displaySaudiPhone(invoiceCustomer.customerPhone)}</span></div>
                 <div><strong>رقم الخدمة</strong><span>{invoiceCustomer.serviceNumber || '-'}</span></div>
                 <div><strong>نوع الاشتراك</strong><span>{invoiceCustomer.subscriptionType}</span></div>
                 <div><strong>المدة</strong><span>{invoiceCustomer.durationMonths} شهر</span></div>
@@ -953,7 +968,21 @@ function CustomerFormFields({ form, setForm, idPrefix = 'customer' }) {
   return (
     <>
       <label>اسم العميل<input required value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} /></label>
-      <label>رقم العميل (واتساب)<input required value={form.customerPhone} onChange={(e) => setForm((p) => ({ ...p, customerPhone: e.target.value }))} /></label>
+      <label>
+        رقم العميل (واتساب)
+        <span className="field-hint">مفتاح الدولة +966 مضاف تلقائيًا ومخفي — أدخل الرقم بدون الصفر، مثال: 512345678</span>
+        <div className="phone-input-wrap">
+          <span className="phone-prefix">+966</span>
+          <input
+            required
+            inputMode="numeric"
+            dir="ltr"
+            placeholder="512345678"
+            value={form.customerPhone}
+            onChange={(e) => setForm((p) => ({ ...p, customerPhone: extractLocalSaudiPhone(e.target.value) }))}
+          />
+        </div>
+      </label>
       <label>الرقم التسلسلي للشريحة<input placeholder="يُنشأ تلقائيًا عند الإضافة الجديدة" value={form.serialNumber || ''} onChange={(e) => setForm((p) => ({ ...p, serialNumber: e.target.value }))} /></label>
       <label>رقم الخدمة<input required value={form.serviceNumber} onChange={(e) => setForm((p) => ({ ...p, serviceNumber: e.target.value }))} /></label>
       <label>رقم الطلب بالمتجر<input required value={form.orderNumber} onChange={(e) => setForm((p) => ({ ...p, orderNumber: e.target.value }))} /></label>
