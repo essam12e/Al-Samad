@@ -1,5 +1,5 @@
 {
-  "name": "alsmad-store",
+  "name": "alsmad-next-clean",
   "private": true,
   "version": "1.0.0",
   "scripts": {
@@ -17,6 +17,6 @@
     "xlsx": "^0.18.5"
   },
   "engines": {
-    "node": ">=20.9.0"
+    "node": "20.x"
   }
 }

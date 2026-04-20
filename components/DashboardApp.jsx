@@ -5,7 +5,7 @@ import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import * as XLSX from 'xlsx'
 
-const STORAGE_KEY = 'alsmad-next-clean-state-v1'
+const STORAGE_KEY = 'alsmad-next-clean-state-v2'
 const MAIN_ADMIN_USERNAME = 'Al-Samad'
 const MAIN_ADMIN_PASSWORD = '102030'
 
@@ -16,8 +16,15 @@ const roleLabels = {
   support: 'دعم',
 }
 
-const subscriptionTypeOptions = ['باقة القمة', 'باقة التميز', 'اشتراك بيانات', 'خدمة مخصصة']
-const durationOptions = [1, 3, 6, 12, 24]
+const subscriptionTypeOptions = [
+  'باقة القمة',
+  'باقة التميز',
+  'اشتراك بيانات',
+  'خدمة مخصصة',
+  'شريحة موبايلي اعمال',
+  'شريحة STC اعمال',
+]
+const durationOptions = [1, 2, 3, 6, 12]
 
 const addMonths = (dateString, months) => {
   const date = new Date(dateString)
@@ -64,7 +71,9 @@ const buildDeletionRecord = (customer, actor, reason) => ({
   id: Date.now() + Math.floor(Math.random() * 1000),
   customerId: customer.id,
   customerName: customer.name,
-  customerNumber: customer.customerNumber,
+  serialNumber: customer.serialNumber,
+  customerPhone: customer.customerPhone,
+  serviceNumber: customer.serviceNumber,
   orderNumber: customer.orderNumber,
   reason,
   actor,
@@ -108,9 +117,10 @@ const initialState = {
   customers: [
     {
       id: 1001,
-      customerNumber: '966501234567',
+      serialNumber: 'SIM-1001',
       name: 'أحمد الشمري',
-      phone: '966501234567',
+      customerPhone: '966501234567',
+      serviceNumber: 'SVC-3001',
       orderNumber: 'ORD-50031',
       subscriptionType: 'باقة القمة',
       durationMonths: 12,
@@ -122,9 +132,10 @@ const initialState = {
     },
     {
       id: 1002,
-      customerNumber: '966509876543',
+      serialNumber: 'SIM-1002',
       name: 'خالد المطيري',
-      phone: '966509876543',
+      customerPhone: '966509876543',
+      serviceNumber: 'SVC-3002',
       orderNumber: 'ORD-50044',
       subscriptionType: 'باقة التميز',
       durationMonths: 6,
@@ -141,7 +152,9 @@ const initialState = {
 
 const emptyCustomerForm = {
   name: '',
-  phone: '',
+  customerPhone: '',
+  serialNumber: '',
+  serviceNumber: '',
   orderNumber: '',
   subscriptionType: 'باقة القمة',
   durationMonths: '12',
@@ -164,13 +177,25 @@ const getStoredState = () => {
     const saved = window.localStorage.getItem(STORAGE_KEY)
     if (!saved) return initialState
     const parsed = JSON.parse(saved)
+    const normalizedCustomers = (parsed.customers || initialState.customers).map((customer) => ({
+      ...customer,
+      serialNumber: customer.serialNumber || customer.customerNumber || `SIM-${String(customer.id).slice(-4)}`,
+      customerPhone: customer.customerPhone || customer.phone || '',
+      serviceNumber: customer.serviceNumber || '',
+    }))
+    const normalizedDeletedCustomers = (parsed.deletedCustomers || []).map((customer) => ({
+      ...customer,
+      serialNumber: customer.serialNumber || customer.customerNumber || '',
+      customerPhone: customer.customerPhone || customer.phone || '',
+      serviceNumber: customer.serviceNumber || '',
+    }))
     return {
       ...initialState,
       ...parsed,
       users: parsed.users || initialState.users,
-      customers: parsed.customers || initialState.customers,
+      customers: normalizedCustomers,
       auditLogs: parsed.auditLogs || initialState.auditLogs,
-      deletedCustomers: parsed.deletedCustomers || [],
+      deletedCustomers: normalizedDeletedCustomers,
     }
   } catch {
     return initialState
@@ -185,6 +210,21 @@ const withStatus = (customer) => {
   return { ...customer, daysLeft, subscriptionStatus }
 }
 
+const sanitizePhoneNumber = (value) => String(value || '').replace(/[^\d]/g, '')
+const createCustomerDraft = (customer) => ({
+  name: customer.name || '',
+  customerPhone: customer.customerPhone || '',
+  serialNumber: customer.serialNumber || '',
+  serviceNumber: customer.serviceNumber || '',
+  orderNumber: customer.orderNumber || '',
+  subscriptionType: customer.subscriptionType || subscriptionTypeOptions[0],
+  durationMonths: String(customer.durationMonths || durationOptions[0]),
+  startDate: customer.startDate || new Date().toISOString().split('T')[0],
+  amount: String(customer.amount ?? ''),
+  renewalStatus: customer.renewalStatus || 'pending',
+  notes: customer.notes || '',
+})
+
 export default function DashboardApp() {
   const [mounted, setMounted] = useState(false)
   const [appState, setAppState] = useState(initialState)
@@ -197,6 +237,8 @@ export default function DashboardApp() {
   const [filter, setFilter] = useState('all')
   const [message, setMessage] = useState('')
   const [invoiceCustomer, setInvoiceCustomer] = useState(null)
+  const [editingCustomer, setEditingCustomer] = useState(null)
+  const [editForm, setEditForm] = useState(emptyCustomerForm)
   const invoiceRef = useRef(null)
 
   useEffect(() => {
@@ -226,7 +268,7 @@ export default function DashboardApp() {
 
   const filteredCustomers = useMemo(() => {
     return customers.filter((customer) => {
-      const haystack = [customer.name, customer.customerNumber, customer.orderNumber, customer.phone]
+      const haystack = [customer.name, customer.serialNumber, customer.orderNumber, customer.customerPhone, customer.serviceNumber]
         .join(' ')
         .toLowerCase()
       const matchesSearch = haystack.includes(search.toLowerCase())
@@ -252,6 +294,16 @@ export default function DashboardApp() {
     [customers],
   )
 
+  const openEditCustomer = (customer) => {
+    setEditingCustomer(customer)
+    setEditForm(createCustomerDraft(customer))
+  }
+
+  const closeEditCustomer = () => {
+    setEditingCustomer(null)
+    setEditForm(emptyCustomerForm)
+  }
+
   const handleLogin = (event) => {
     event.preventDefault()
     const user = appState.users.find(
@@ -269,8 +321,17 @@ export default function DashboardApp() {
   const handleCustomerSubmit = (event) => {
     event.preventDefault()
     const durationMonths = Number(customerForm.durationMonths)
+    const customerPhone = sanitizePhoneNumber(customerForm.customerPhone)
     if (!durationMonths || durationMonths < 1) {
       setMessage('أدخل مدة اشتراك صحيحة بالشهور')
+      return
+    }
+    if (!customerPhone) {
+      setMessage('أدخل رقم العميل الصحيح للواتساب')
+      return
+    }
+    if (!customerForm.serviceNumber.trim()) {
+      setMessage('أدخل رقم الخدمة')
       return
     }
     const nextId = Date.now()
@@ -279,8 +340,9 @@ export default function DashboardApp() {
     const newCustomer = {
       id: nextId,
       ...customerForm,
-      customerNumber: customerForm.phone,
-      phone: customerForm.phone,
+      serialNumber: customerForm.serialNumber.trim() || `SIM-${String(nextId).slice(-5)}`,
+      customerPhone,
+      serviceNumber: customerForm.serviceNumber.trim(),
       durationMonths,
       amount: Number(customerForm.amount || 0),
       endDate: addMonths(customerForm.startDate, durationMonths),
@@ -292,6 +354,47 @@ export default function DashboardApp() {
     }))
     setCustomerForm(emptyCustomerForm)
     setMessage('تم إضافة العميل والاشتراك بنجاح')
+  }
+
+  const handleCustomerUpdate = (event) => {
+    event.preventDefault()
+    if (!editingCustomer) return
+    const durationMonths = Number(editForm.durationMonths)
+    const customerPhone = sanitizePhoneNumber(editForm.customerPhone)
+    if (!durationMonths || durationMonths < 1) {
+      setMessage('أدخل مدة اشتراك صحيحة بالشهور')
+      return
+    }
+    if (!customerPhone) {
+      setMessage('أدخل رقم العميل الصحيح للواتساب')
+      return
+    }
+    if (!editForm.serviceNumber.trim()) {
+      setMessage('أدخل رقم الخدمة')
+      return
+    }
+
+    const updatedCustomer = {
+      ...editingCustomer,
+      ...editForm,
+      serialNumber: editForm.serialNumber.trim() || editingCustomer.serialNumber,
+      customerPhone,
+      serviceNumber: editForm.serviceNumber.trim(),
+      durationMonths,
+      amount: Number(editForm.amount || 0),
+      endDate: addMonths(editForm.startDate, durationMonths),
+    }
+
+    setAppState((prev) => ({
+      ...prev,
+      customers: prev.customers.map((customer) => (customer.id === editingCustomer.id ? updatedCustomer : customer)),
+      auditLogs: [
+        buildAudit('تعديل بيانات عميل', currentUser.username, updatedCustomer.name, `الخدمة: ${updatedCustomer.serviceNumber || '-'} — النوع: ${updatedCustomer.subscriptionType} — المدة: ${updatedCustomer.durationMonths} شهر`),
+        ...prev.auditLogs,
+      ].slice(0, 100),
+    }))
+    closeEditCustomer()
+    setMessage('تم تحديث بيانات العميل بنجاح')
   }
 
   const handleUserSubmit = (event) => {
@@ -375,10 +478,15 @@ export default function DashboardApp() {
   }
 
   const openWhatsApp = (customer) => {
+    const whatsappNumber = sanitizePhoneNumber(customer.customerPhone)
+    if (!whatsappNumber) {
+      setMessage('رقم العميل غير صالح للواتساب')
+      return
+    }
     const text = encodeURIComponent(
       `مرحباً ${customer.name}، نود تذكيركم بأن اشتراك ${customer.subscriptionType} سينتهي بتاريخ ${customer.endDate}.`,
     )
-    window.open(`https://wa.me/${customer.phone}?text=${text}`, '_blank')
+    window.open(`https://wa.me/${whatsappNumber}?text=${text}`, '_blank', 'noopener,noreferrer')
   }
 
   const downloadInvoice = async (customer) => {
@@ -391,8 +499,8 @@ export default function DashboardApp() {
     const pageWidth = pdf.internal.pageSize.getWidth()
     const pageHeight = (canvas.height * pageWidth) / canvas.width
     pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight)
-    pdf.save(`invoice-${customer.customerNumber}.pdf`)
-    addAuditLog('تحميل فاتورة', currentUser.username, customer.name, `رقم الشريحة: ${customer.customerNumber}`)
+    pdf.save(`invoice-${customer.serialNumber}.pdf`)
+    addAuditLog('تحميل فاتورة', currentUser.username, customer.name, `الرقم التسلسلي للشريحة: ${customer.serialNumber}`)
     setMessage('تم تحميل الفاتورة')
   }
 
@@ -408,8 +516,9 @@ export default function DashboardApp() {
       appState.customers
         .map((item) => ({
           'اسم العميل': item.name,
-          'رقم الشريحة': item.customerNumber,
-          'رقم الجوال': item.phone,
+          'الرقم التسلسلي للشريحة': item.serialNumber,
+          'رقم العميل': item.customerPhone,
+          'رقم الخدمة': item.serviceNumber || '-',
           'رقم الطلب': item.orderNumber,
           'نوع الاشتراك': item.subscriptionType,
           'مدة الاشتراك': `${item.durationMonths} شهر`,
@@ -420,7 +529,7 @@ export default function DashboardApp() {
           'ملاحظات': item.notes || '-',
         }))
         .sort((a, b) => a['اسم العميل'].localeCompare(b['اسم العميل'], 'ar')),
-      [22, 16, 18, 16, 18, 14, 16, 16, 18, 12, 28],
+      [22, 18, 18, 16, 16, 18, 14, 16, 16, 18, 12, 28],
     )
 
     const summarySheet = createWorksheet(
@@ -458,13 +567,15 @@ export default function DashboardApp() {
     const deletedCustomersSheet = createWorksheet(
       (appState.deletedCustomers || []).map((item) => ({
         'اسم العميل': item.customerName,
-        'رقم الشريحة': item.customerNumber,
+        'الرقم التسلسلي للشريحة': item.serialNumber,
+        'رقم العميل': item.customerPhone || '-',
+        'رقم الخدمة': item.serviceNumber || '-',
         'رقم الطلب': item.orderNumber,
         'سبب الحذف': item.reason,
         'تم الحذف بواسطة': item.actor,
         'تاريخ الحذف': item.date,
       })),
-      [22, 16, 16, 40, 18, 22],
+      [22, 18, 18, 16, 16, 40, 18, 22],
     )
 
     XLSX.utils.book_append_sheet(workbook, summarySheet, 'ملخص')
@@ -493,7 +604,7 @@ export default function DashboardApp() {
         <section className="hero-panel">
           <img className="brand-logo" src="/alsmad-logo.jpeg" alt="شعار الصماد" />
           <span className="badge">منصة إدارة اشتراكات</span>
-          <h1>متجر الصماد لإدارة الاشتراكات والعملاء والفواتير</h1>
+          <h1>نظام الصماد لإدارة الاشتراكات والعملاء والفواتير</h1>
           <p>منصة احترافية لإدارة العملاء والاشتراكات والفواتير والتنبيهات ضمن واجهة واضحة ودقيقة.</p>
 
           <div className="hero-grid">
@@ -586,54 +697,9 @@ export default function DashboardApp() {
             <div className="panel two-col">
               <div>
                 <h3>إضافة عميل جديد</h3>
-                <p className="muted">في حقول الاشتراك يمكنك الاختيار من الموجود أو إدخال قيمة يدويًا.</p>
+                <p className="muted">تمت إضافة خيارات سريعة مباشرة للمدة والنوع مع إمكانية الإدخال اليدوي والتعديل الاحترافي.</p>
                 <form className="form-grid" onSubmit={handleCustomerSubmit}>
-                  <label>اسم العميل<input required value={customerForm.name} onChange={(e) => setCustomerForm((p) => ({ ...p, name: e.target.value }))} /></label>
-                  <label>رقم الشريحة<input required value={customerForm.phone} onChange={(e) => setCustomerForm((p) => ({ ...p, phone: e.target.value }))} /></label>
-                  <label>رقم الطلب بالمتجر<input required value={customerForm.orderNumber} onChange={(e) => setCustomerForm((p) => ({ ...p, orderNumber: e.target.value }))} /></label>
-                  <label>
-                    نوع الاشتراك
-                    <span className="field-hint">اختر من القائمة أو أدخل يدويًا</span>
-                    <input
-                      list="subscription-type-options"
-                      value={customerForm.subscriptionType}
-                      placeholder="اختر من القائمة أو أدخل يدويًا"
-                      onChange={(e) => setCustomerForm((p) => ({ ...p, subscriptionType: e.target.value }))}
-                    />
-                    <datalist id="subscription-type-options">
-                      {subscriptionTypeOptions.map((option) => (
-                        <option key={option} value={option} />
-                      ))}
-                    </datalist>
-                  </label>
-                  <label>
-                    مدة الاشتراك
-                    <span className="field-hint">اختر من القائمة أو أدخل يدويًا</span>
-                    <input
-                      list="duration-options"
-                      type="number"
-                      min="1"
-                      value={customerForm.durationMonths}
-                      placeholder="اختر من القائمة أو أدخل يدويًا"
-                      onChange={(e) => setCustomerForm((p) => ({ ...p, durationMonths: e.target.value }))}
-                    />
-                    <datalist id="duration-options">
-                      {durationOptions.map((option) => (
-                        <option key={option} value={option} />
-                      ))}
-                    </datalist>
-                  </label>
-                  <label>تاريخ البداية<input className="date-input" type="date" value={customerForm.startDate} onChange={(e) => setCustomerForm((p) => ({ ...p, startDate: e.target.value }))} /></label>
-                  <label>قيمة الفاتورة<input type="number" value={customerForm.amount} onChange={(e) => setCustomerForm((p) => ({ ...p, amount: e.target.value }))} /></label>
-                  <label>
-                    حالة التجديد
-                    <select value={customerForm.renewalStatus} onChange={(e) => setCustomerForm((p) => ({ ...p, renewalStatus: e.target.value }))}>
-                      <option value="pending">بانتظار التجديد</option>
-                      <option value="renewed">تم التجديد</option>
-                      <option value="not-renewed">لم يتم التجديد</option>
-                    </select>
-                  </label>
-                  <label className="full-span">ملاحظات<textarea rows="3" value={customerForm.notes} onChange={(e) => setCustomerForm((p) => ({ ...p, notes: e.target.value }))} /></label>
+                  <CustomerFormFields form={customerForm} setForm={setCustomerForm} idPrefix="create" />
                   <button className="primary-btn full-span" type="submit">حفظ العميل والاشتراك</button>
                 </form>
               </div>
@@ -647,6 +713,8 @@ export default function DashboardApp() {
                     <div key={customer.id} className="alert-card">
                       <strong>{customer.name}</strong>
                       <span>متبقي {customer.daysLeft} يوم - {customer.subscriptionType}</span>
+                      <span>رقم العميل: {customer.customerPhone}</span>
+                      <span>الرقم التسلسلي للشريحة: {customer.serialNumber}</span>
                       <span>رقم الطلب: {customer.orderNumber}</span>
                       <div className="row-actions">
                         <button className="primary-btn small" onClick={() => openWhatsApp(customer)}>تواصل واتساب</button>
@@ -663,7 +731,7 @@ export default function DashboardApp() {
         {activeTab === 'customers' && (
           <section className="panel">
             <div className="toolbar">
-              <input className="search-input" placeholder="ابحث باسم العميل أو رقم الشريحة أو رقم الطلب" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <input className="search-input" placeholder="ابحث باسم العميل أو الرقم التسلسلي أو رقم العميل أو رقم الخدمة أو رقم الطلب" value={search} onChange={(e) => setSearch(e.target.value)} />
               <select value={filter} onChange={(e) => setFilter(e.target.value)}>
                 <option value="all">كل الحالات</option>
                 <option value="active">نشط</option>
@@ -678,14 +746,16 @@ export default function DashboardApp() {
               <table>
                 <thead>
                   <tr>
-                    <th>اسم العميل</th><th>رقم الشريحة</th><th>رقم الطلب</th><th>نوع الاشتراك</th><th>المدة</th><th>البداية</th><th>النهاية</th><th>الحالة</th><th>التجديد</th><th>الفاتورة</th><th>إجراء</th>
+                    <th>اسم العميل</th><th>الرقم التسلسلي للشريحة</th><th>رقم العميل</th><th>رقم الخدمة</th><th>رقم الطلب</th><th>نوع الاشتراك</th><th>المدة</th><th>البداية</th><th>النهاية</th><th>الحالة</th><th>التجديد</th><th>الفاتورة</th><th>إجراء</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCustomers.map((customer) => (
                     <tr key={customer.id}>
-                      <td><strong>{customer.name}</strong><span className="cell-note">رقم الشريحة: {customer.customerNumber}</span></td>
-                      <td>{customer.customerNumber}</td>
+                      <td><strong>{customer.name}</strong><span className="cell-note">{customer.customerPhone}</span></td>
+                      <td>{customer.serialNumber}</td>
+                      <td>{customer.customerPhone}</td>
+                      <td>{customer.serviceNumber || '-'}</td>
                       <td>{customer.orderNumber}</td>
                       <td>{customer.subscriptionType}</td>
                       <td>{customer.durationMonths} شهر</td>
@@ -694,7 +764,7 @@ export default function DashboardApp() {
                       <td><span className={`status-pill ${customer.subscriptionStatus}`}>{customer.subscriptionStatus === 'active' ? 'نشط' : customer.subscriptionStatus === 'expiring' ? `باقي ${customer.daysLeft} يوم` : 'منتهي'}</span></td>
                       <td><span className={`status-pill renewal ${customer.renewalStatus}`}>{customer.renewalStatus === 'renewed' ? 'تم التجديد' : customer.renewalStatus === 'not-renewed' ? 'لم يتم التجديد' : 'بانتظار التجديد'}</span></td>
                       <td><button className="ghost-btn small" onClick={() => downloadInvoice(customer)}>تحميل الفاتورة</button></td>
-                      <td><div className="row-actions vertical"><button className="primary-btn small" onClick={() => openWhatsApp(customer)}>واتساب</button><button className="ghost-btn small" onClick={() => renewCustomer(customer.id)}>تجديد</button><button className="ghost-btn small danger-btn" onClick={() => deleteCustomer(customer.id)}>حذف العميل</button></div></td>
+                      <td><div className="row-actions vertical"><button className="primary-btn small" onClick={() => openWhatsApp(customer)}>واتساب</button><button className="ghost-btn small" onClick={() => renewCustomer(customer.id)}>تجديد</button><button className="ghost-btn small" onClick={() => openEditCustomer(customer)}>تعديل البيانات</button><button className="ghost-btn small danger-btn" onClick={() => deleteCustomer(customer.id)}>حذف العميل</button></div></td>
                     </tr>
                   ))}
                 </tbody>
@@ -711,7 +781,9 @@ export default function DashboardApp() {
                 <div key={customer.id} className="alert-card wide">
                   <div>
                     <strong>{customer.name}</strong>
-                    <p>رقم الشريحة: {customer.customerNumber} — رقم الطلب: {customer.orderNumber}</p>
+                    <p>الرقم التسلسلي للشريحة: {customer.serialNumber} — رقم العميل: {customer.customerPhone}</p>
+                    <p>رقم الخدمة: {customer.serviceNumber || '-'}</p>
+                    <p>رقم الطلب: {customer.orderNumber}</p>
                     <p>المتبقي: {customer.daysLeft} يوم — ينتهي بتاريخ {formatDate(customer.endDate)}</p>
                   </div>
                   <div className="row-actions">
@@ -800,23 +872,38 @@ export default function DashboardApp() {
                 ))}
               </div>
             </div>
-
-            <div className="panel">
-              <h3>العملاء المحذوفون</h3>
-              <div className="audit-list">
-                {appState.deletedCustomers?.length ? appState.deletedCustomers.map((item) => (
-                  <div key={item.id} className="audit-card">
-                    <strong>{item.customerName}</strong>
-                    <p>رقم الشريحة: {item.customerNumber} — رقم الطلب: {item.orderNumber}</p>
-                    <p>سبب الحذف: {item.reason}</p>
-                    <span>{item.date} — بواسطة {item.actor}</span>
-                  </div>
-                )) : <p className="muted">لا يوجد عملاء محذوفون حتى الآن.</p>}
-              </div>
-            </div>
           </section>
         )}
       </main>
+
+      {editingCustomer ? (
+        <div className="modal-backdrop" onClick={closeEditCustomer}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>تعديل بيانات العميل</h3>
+                <p>واجهة احترافية لتحديث كل بيانات العميل والاشتراك من مكان واحد.</p>
+              </div>
+              <button className="ghost-btn small" type="button" onClick={closeEditCustomer}>إغلاق</button>
+            </div>
+
+            <div className="edit-summary">
+              <div><span>العميل</span><strong>{editingCustomer.name}</strong></div>
+              <div><span>الرقم التسلسلي</span><strong>{editingCustomer.serialNumber}</strong></div>
+              <div><span>رقم العميل</span><strong>{editingCustomer.customerPhone}</strong></div>
+              <div><span>رقم الخدمة</span><strong>{editingCustomer.serviceNumber || '-'}</strong></div>
+            </div>
+
+            <form className="form-grid" onSubmit={handleCustomerUpdate}>
+              <CustomerFormFields form={editForm} setForm={setEditForm} idPrefix="edit" />
+              <div className="full-span modal-actions">
+                <button className="ghost-btn" type="button" onClick={closeEditCustomer}>إلغاء</button>
+                <button className="primary-btn" type="submit">حفظ التعديلات</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       <div className="invoice-hidden">
         <div ref={invoiceRef} className="invoice-sheet">
@@ -830,14 +917,15 @@ export default function DashboardApp() {
                 </div>
               </div>
               <div className="invoice-meta">
-                <div><strong>رقم الفاتورة</strong><span>{createInvoiceNumber(invoiceCustomer.customerNumber)}</span></div>
+                <div><strong>رقم الفاتورة</strong><span>{createInvoiceNumber(invoiceCustomer.serialNumber)}</span></div>
                 <div><strong>تاريخ الإصدار</strong><span>{formatDate(new Date().toISOString().split('T')[0])}</span></div>
               </div>
               <div className="invoice-grid">
                 <div><strong>اسم العميل</strong><span>{invoiceCustomer.name}</span></div>
-                <div><strong>رقم الشريحة</strong><span>{invoiceCustomer.customerNumber}</span></div>
+                <div><strong>الرقم التسلسلي للشريحة</strong><span>{invoiceCustomer.serialNumber}</span></div>
                 <div><strong>رقم الطلب</strong><span>{invoiceCustomer.orderNumber}</span></div>
-                <div><strong>الجوال</strong><span>{invoiceCustomer.phone}</span></div>
+                <div><strong>رقم العميل</strong><span>{invoiceCustomer.customerPhone}</span></div>
+                <div><strong>رقم الخدمة</strong><span>{invoiceCustomer.serviceNumber || '-'}</span></div>
                 <div><strong>نوع الاشتراك</strong><span>{invoiceCustomer.subscriptionType}</span></div>
                 <div><strong>المدة</strong><span>{invoiceCustomer.durationMonths} شهر</span></div>
                 <div><strong>البداية</strong><span>{formatDate(invoiceCustomer.startDate)}</span></div>
@@ -857,6 +945,103 @@ function StatCard({ title, value }) {
     <div className="stat-card">
       <span>{title}</span>
       <strong>{value}</strong>
+    </div>
+  )
+}
+
+function CustomerFormFields({ form, setForm, idPrefix = 'customer' }) {
+  return (
+    <>
+      <label>اسم العميل<input required value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} /></label>
+      <label>رقم العميل (واتساب)<input required value={form.customerPhone} onChange={(e) => setForm((p) => ({ ...p, customerPhone: e.target.value }))} /></label>
+      <label>الرقم التسلسلي للشريحة<input placeholder="يُنشأ تلقائيًا عند الإضافة الجديدة" value={form.serialNumber || ''} onChange={(e) => setForm((p) => ({ ...p, serialNumber: e.target.value }))} /></label>
+      <label>رقم الخدمة<input required value={form.serviceNumber} onChange={(e) => setForm((p) => ({ ...p, serviceNumber: e.target.value }))} /></label>
+      <label>رقم الطلب بالمتجر<input required value={form.orderNumber} onChange={(e) => setForm((p) => ({ ...p, orderNumber: e.target.value }))} /></label>
+
+      <label className="full-span">
+        نوع الاشتراك
+        <span className="field-hint">اختر مباشرة من الخيارات أو اكتب يدويًا</span>
+        <QuickOptionSelector
+          options={subscriptionTypeOptions}
+          currentValue={form.subscriptionType}
+          onSelect={(value) => setForm((p) => ({ ...p, subscriptionType: value }))}
+        />
+        <input
+          list={`${idPrefix}-subscription-type-options`}
+          value={form.subscriptionType}
+          placeholder="اختر من القائمة أو أدخل يدويًا"
+          onChange={(e) => setForm((p) => ({ ...p, subscriptionType: e.target.value }))}
+        />
+        <datalist id={`${idPrefix}-subscription-type-options`}>
+          {subscriptionTypeOptions.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+      </label>
+
+      <label className="full-span">
+        مدة الاشتراك
+        <span className="field-hint">اضغط مباشرة على المدة المطلوبة</span>
+        <QuickOptionSelector
+          options={durationOptions.map((value) => ({
+            value: String(value),
+            label:
+              value === 1 ? '1 شهر'
+              : value === 2 ? '2 شهرين'
+              : value === 3 ? '3 اشهر'
+              : value === 6 ? '6 اشهر'
+              : '12 شهر',
+          }))}
+          currentValue={String(form.durationMonths)}
+          onSelect={(value) => setForm((p) => ({ ...p, durationMonths: value }))}
+        />
+        <input
+          list={`${idPrefix}-duration-options`}
+          type="number"
+          min="1"
+          value={form.durationMonths}
+          placeholder="اختر من القائمة أو أدخل يدويًا"
+          onChange={(e) => setForm((p) => ({ ...p, durationMonths: e.target.value }))}
+        />
+        <datalist id={`${idPrefix}-duration-options`}>
+          {durationOptions.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+      </label>
+
+      <label>تاريخ البداية<input className="date-input" type="date" value={form.startDate} onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))} /></label>
+      <label>قيمة الفاتورة<input type="number" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} /></label>
+      <label>
+        حالة التجديد
+        <select value={form.renewalStatus} onChange={(e) => setForm((p) => ({ ...p, renewalStatus: e.target.value }))}>
+          <option value="pending">بانتظار التجديد</option>
+          <option value="renewed">تم التجديد</option>
+          <option value="not-renewed">لم يتم التجديد</option>
+        </select>
+      </label>
+      <label className="full-span">ملاحظات<textarea rows="3" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} /></label>
+    </>
+  )
+}
+
+function QuickOptionSelector({ options, currentValue, onSelect }) {
+  return (
+    <div className="quick-options">
+      {options.map((option) => {
+        const normalized = typeof option === 'string' ? { value: option, label: option } : option
+        const isActive = String(currentValue) === String(normalized.value)
+        return (
+          <button
+            key={normalized.value}
+            className={isActive ? 'option-chip active' : 'option-chip'}
+            type="button"
+            onClick={() => onSelect(normalized.value)}
+          >
+            {normalized.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

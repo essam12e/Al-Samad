@@ -1,7 +1,18 @@
-# متجر الصماد
+# Alsmad Next App
 
-1. npm install
-2. npm run dev
-3. ارفع المشروع إلى GitHub ثم اربطه مع Vercel.
+Ready for:
+- GitHub
+- Vercel
 
-يتطلب Node.js 20.9 أو أحدث.
+## Run locally
+
+```bash
+npm install
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+```
