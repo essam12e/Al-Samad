@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf'
 import * as XLSX from 'xlsx'
 
 const STORAGE_KEY = 'alsmad-next-clean-state-v2'
+const SESSION_USER_KEY = 'alsmad-next-clean-session-user-v1'
 const MAIN_ADMIN_USERNAME = 'Al-Samad'
 const MAIN_ADMIN_PASSWORD = '102030'
 
@@ -265,6 +266,35 @@ export default function DashboardApp() {
     if (!mounted) return
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(appState))
   }, [appState, mounted])
+
+  useEffect(() => {
+    if (!mounted) return
+    try {
+      const savedUsername = window.localStorage.getItem(SESSION_USER_KEY)
+      if (!savedUsername) return
+      const matchedUser = appState.users.find((item) => item.username === savedUsername)
+      if (matchedUser) {
+        setCurrentUser(matchedUser)
+      } else {
+        window.localStorage.removeItem(SESSION_USER_KEY)
+      }
+    } catch {
+      window.localStorage.removeItem(SESSION_USER_KEY)
+    }
+  }, [appState.users, mounted])
+
+  useEffect(() => {
+    if (!mounted) return
+    try {
+      if (currentUser?.username) {
+        window.localStorage.setItem(SESSION_USER_KEY, currentUser.username)
+      } else {
+        window.localStorage.removeItem(SESSION_USER_KEY)
+      }
+    } catch {
+      // ignore localStorage persistence failures
+    }
+  }, [currentUser, mounted])
 
   useEffect(() => {
     if (!message) return undefined
@@ -606,6 +636,7 @@ export default function DashboardApp() {
 
   const resetDemo = () => {
     window.localStorage.removeItem(STORAGE_KEY)
+    window.localStorage.removeItem(SESSION_USER_KEY)
     setAppState(initialState)
     setCurrentUser(null)
     setMessage('تم إعادة ضبط البيانات التجريبية')
