@@ -57,6 +57,13 @@ const formatDate = (value) =>
     day: 'numeric',
   }).format(new Date(value))
 
+const formatHijriDate = (value) =>
+  new Intl.DateTimeFormat('ar-SA-u-ca-islamic', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date(value))
+
 const createInvoiceNumber = (customerId) =>
   `INV-${customerId}-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}`
 
@@ -128,8 +135,8 @@ const initialState = {
       durationMonths: 12,
       startDate: '2025-04-22',
       endDate: '2026-04-22',
-      renewalStatus: 'pending',
-      amount: 1299,
+  renewalStatus: 'pending',
+  amount: 1299,
       notes: 'عميل مهم',
     },
     {
@@ -143,8 +150,8 @@ const initialState = {
       durationMonths: 6,
       startDate: '2025-10-20',
       endDate: '2026-04-20',
-      renewalStatus: 'pending',
-      amount: 799,
+  renewalStatus: 'pending',
+  amount: 799,
       notes: 'يحتاج تواصل قبل الانتهاء',
     },
   ],
@@ -162,7 +169,6 @@ const emptyCustomerForm = {
   durationMonths: '12',
   startDate: new Date().toISOString().split('T')[0],
   amount: '',
-  renewalStatus: 'pending',
   notes: '',
 }
 
@@ -237,7 +243,6 @@ const createCustomerDraft = (customer) => ({
   durationMonths: String(customer.durationMonths || durationOptions[0]),
   startDate: customer.startDate || new Date().toISOString().split('T')[0],
   amount: String(customer.amount ?? ''),
-  renewalStatus: customer.renewalStatus || 'pending',
   notes: customer.notes || '',
 })
 
@@ -317,8 +322,7 @@ export default function DashboardApp() {
         .join(' ')
         .toLowerCase()
       const matchesSearch = haystack.includes(search.toLowerCase())
-      const matchesFilter =
-        filter === 'all' ? true : customer.subscriptionStatus === filter || customer.renewalStatus === filter
+      const matchesFilter = filter === 'all' ? true : customer.subscriptionStatus === filter
       return matchesSearch && matchesFilter
     })
   }, [customers, filter, search])
@@ -329,8 +333,6 @@ export default function DashboardApp() {
       activeCustomers: customers.filter((item) => item.subscriptionStatus === 'active').length,
       expiringSoon: customers.filter((item) => item.daysLeft >= 0 && item.daysLeft <= 3).length,
       expired: customers.filter((item) => item.subscriptionStatus === 'expired').length,
-      renewed: customers.filter((item) => item.renewalStatus === 'renewed').length,
-      pending: customers.filter((item) => item.renewalStatus !== 'renewed').length,
     }
   }, [customers])
 
@@ -488,7 +490,6 @@ export default function DashboardApp() {
           ...customer,
           startDate: newStartDate,
           endDate: addMonths(newStartDate, customer.durationMonths),
-          renewalStatus: 'renewed',
         }
       }),
       auditLogs: [buildAudit('تجديد اشتراك', currentUser.username, target?.name || 'عميل', `حتى ${target ? addMonths(target.endDate, target.durationMonths) : ''}`), ...prev.auditLogs].slice(0, 100),
@@ -530,6 +531,7 @@ export default function DashboardApp() {
     }
     const text = encodeURIComponent(
       `مرحباً ${customer.name}، نود تذكيركم بأن اشتراكك في ${customer.subscriptionType} سينتهي بتاريخ ${formatDate(customer.endDate)}\nلتجديد ارسل الرقم 7 مع ارسال ايصال التحويل`,
+      `مرحباً ${customer.name}، نود تذكيركم بأن اشتراكك في ${customer.subscriptionType} سينتهي بتاريخ ${formatHijriDate(customer.endDate)}\nلتجديد ارسل الرقم 7 مع ارسال ايصال التحويل`,
     )
     window.open(`https://wa.me/${whatsappNumber}?text=${text}`, '_blank', 'noopener,noreferrer')
   }
@@ -569,12 +571,11 @@ export default function DashboardApp() {
           'مدة الاشتراك': `${item.durationMonths} شهر`,
           'تاريخ البداية': item.startDate,
           'تاريخ النهاية': item.endDate,
-          'حالة التجديد': item.renewalStatus === 'renewed' ? 'تم التجديد' : item.renewalStatus === 'not-renewed' ? 'لم يتم التجديد' : 'بانتظار التجديد',
           'القيمة': Number(item.amount || 0),
           'ملاحظات': item.notes || '-',
         }))
         .sort((a, b) => a['اسم العميل'].localeCompare(b['اسم العميل'], 'ar')),
-      [22, 18, 18, 16, 16, 18, 14, 16, 16, 18, 12, 28],
+      [22, 18, 18, 16, 16, 18, 14, 16, 16, 12, 28],
     )
 
     const summarySheet = createWorksheet(
@@ -660,7 +661,7 @@ export default function DashboardApp() {
             </div>
             <div className="hero-card">
               <strong>حالة العميل</strong>
-              <p>نشط / سينتهي قريباً / منتهي / تم التجديد / لم يتم التجديد.</p>
+              <p>نشط / سينتهي قريباً / منتهي مع تنبيهات واضحة وسجل عمليات مرتب.</p>
             </div>
             <div className="hero-card">
               <strong>تقارير وإدارة</strong>
@@ -736,8 +737,6 @@ export default function DashboardApp() {
               <StatCard title="العملاء النشطون" value={stats.activeCustomers} />
               <StatCard title="ستنتهي خلال 3 أيام" value={stats.expiringSoon} />
               <StatCard title="اشتراكات منتهية" value={stats.expired} />
-              <StatCard title="تم تجديدهم" value={stats.renewed} />
-              <StatCard title="لم يجددوا بعد" value={stats.pending} />
             </div>
 
             <div className="panel two-col">
@@ -758,10 +757,10 @@ export default function DashboardApp() {
                   alerts.map((customer) => (
                     <div key={customer.id} className="alert-card">
                       <strong>{customer.name}</strong>
-                      <span>متبقي {customer.daysLeft} يوم - {customer.subscriptionType}</span>
-                      <span>رقم العميل: {displaySaudiPhone(customer.customerPhone)}</span>
-                      <span>الرقم التسلسلي للشريحة: {customer.serialNumber}</span>
-                      <span>رقم الطلب: {customer.orderNumber}</span>
+                      <p className="alert-line">متبقي {customer.daysLeft} يوم - {customer.subscriptionType}</p>
+                      <p className="alert-line">رقم العميل: {displaySaudiPhone(customer.customerPhone)}</p>
+                      <p className="alert-line">الرقم التسلسلي للشريحة: {customer.serialNumber}</p>
+                      <p className="alert-line">رقم الطلب: {customer.orderNumber}</p>
                       <div className="row-actions">
                         <button className="primary-btn small" onClick={() => openWhatsApp(customer)}>تواصل واتساب</button>
                         <button className="ghost-btn small" onClick={() => renewCustomer(customer.id)}>تجديد الآن</button>
@@ -783,16 +782,13 @@ export default function DashboardApp() {
                 <option value="active">نشط</option>
                 <option value="expiring">سينتهي قريباً</option>
                 <option value="expired">منتهي</option>
-                <option value="renewed">تم التجديد</option>
-                <option value="pending">بانتظار التجديد</option>
-                <option value="not-renewed">لم يتم التجديد</option>
               </select>
             </div>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>اسم العميل</th><th>الرقم التسلسلي للشريحة</th><th>رقم العميل</th><th>رقم الخدمة</th><th>رقم الطلب</th><th>نوع الاشتراك</th><th>المدة</th><th>البداية</th><th>النهاية</th><th>الحالة</th><th>التجديد</th><th>الفاتورة</th><th>إجراء</th>
+                    <th>اسم العميل</th><th>الرقم التسلسلي للشريحة</th><th>رقم العميل</th><th>رقم الخدمة</th><th>رقم الطلب</th><th>نوع الاشتراك</th><th>المدة</th><th>البداية</th><th>النهاية</th><th>الحالة</th><th>الفاتورة</th><th>إجراء</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -808,7 +804,6 @@ export default function DashboardApp() {
                       <td>{customer.startDate}</td>
                       <td>{customer.endDate}</td>
                       <td><span className={`status-pill ${customer.subscriptionStatus}`}>{customer.subscriptionStatus === 'active' ? 'نشط' : customer.subscriptionStatus === 'expiring' ? `باقي ${customer.daysLeft} يوم` : 'منتهي'}</span></td>
-                      <td><span className={`status-pill renewal ${customer.renewalStatus}`}>{customer.renewalStatus === 'renewed' ? 'تم التجديد' : customer.renewalStatus === 'not-renewed' ? 'لم يتم التجديد' : 'بانتظار التجديد'}</span></td>
                       <td><button className="ghost-btn small" onClick={() => downloadInvoice(customer)}>تحميل الفاتورة</button></td>
                       <td><div className="row-actions vertical"><button className="primary-btn small" onClick={() => openWhatsApp(customer)}>واتساب</button><button className="ghost-btn small" onClick={() => renewCustomer(customer.id)}>تجديد</button><button className="ghost-btn small" onClick={() => openEditCustomer(customer)}>تعديل البيانات</button><button className="ghost-btn small danger-btn" onClick={() => deleteCustomer(customer.id)}>حذف العميل</button></div></td>
                     </tr>
@@ -1072,14 +1067,6 @@ function CustomerFormFields({ form, setForm, idPrefix = 'customer' }) {
 
       <label>تاريخ البداية<input className="date-input" type="date" value={form.startDate} onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))} /></label>
       <label>قيمة الفاتورة<input type="number" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} /></label>
-      <label>
-        حالة التجديد
-        <select value={form.renewalStatus} onChange={(e) => setForm((p) => ({ ...p, renewalStatus: e.target.value }))}>
-          <option value="pending">بانتظار التجديد</option>
-          <option value="renewed">تم التجديد</option>
-          <option value="not-renewed">لم يتم التجديد</option>
-        </select>
-      </label>
       <label className="full-span">ملاحظات<textarea rows="3" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} /></label>
     </>
   )

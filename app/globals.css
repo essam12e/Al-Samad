@@ -425,6 +425,20 @@ textarea:focus {
   background: linear-gradient(180deg, #fff8ef, #ffffff);
 }
 
+.alert-card strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--navy);
+  line-height: 1.7;
+}
+
+.alert-line {
+  margin: 0 0 6px;
+  color: #4c4f68;
+  line-height: 1.9;
+  word-break: break-word;
+}
+
 .alert-card + .alert-card {
   margin-top: 14px;
 }
