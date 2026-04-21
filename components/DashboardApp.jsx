@@ -700,7 +700,13 @@ export default function DashboardApp() {
               كلمة المرور
               <input type="password" value={loginData.password} onChange={(e) => setLoginData((prev) => ({ ...prev, password: e.target.value }))} />
             </label>
-            <button className="primary-btn" type="submit">دخول للنظام</button>
+   <button
+  className="primary-btn"
+  type="button"
+  onClick={handleGoogleLogin}
+>
+  تسجيل الدخول بحساب Google
+</button>
             {message ? <div className="toast">{message}</div> : null}
           </form>
         </section>
