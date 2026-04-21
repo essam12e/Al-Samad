@@ -151,6 +151,57 @@ a {
   gap: 18px;
 }
 
+.divider {
+  position: relative;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.divider::before {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  border-top: 1px solid var(--line);
+}
+
+.divider span {
+  position: relative;
+  background: rgba(255, 255, 255, 0.97);
+  padding: 0 12px;
+}
+
+.google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid #d7dbef;
+  border-radius: 14px;
+  background: #fff;
+  color: #1f1f1f;
+  padding: 14px 18px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.google-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.google-mark {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #4285f4, #34a853);
+  color: #fff;
+  font-weight: 800;
+}
+
 .login-card h2,
 .panel h3 {
   margin: 0;

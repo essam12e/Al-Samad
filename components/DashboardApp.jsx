@@ -1,40 +1,24 @@
-import { auth } from "../lib/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
-
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import * as XLSX from 'xlsx'
+import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
+import { auth } from '../lib/firebase'
 
-export default function DashboardApp() {
+const STORAGE_KEY = 'alsmad-next-clean-state-v2'
+const SESSION_USER_KEY = 'alsmad-next-clean-session-user-v1'
+const MAIN_ADMIN_USERNAME = 'Al-Samad'
+const MAIN_ADMIN_PASSWORD = '102030'
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  const handleLogin = async () => {
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      alert("تم تسجيل الدخول");
-    } catch (err) {
-      alert("خطأ في تسجيل الدخول");
-      console.error(err);
-    }
-  };
-
-  const STORAGE_KEY = 'alsmad-next-clean-state-v2'
-  const SESSION_USER_KEY = 'alsmad-next-clean-session-user-v1'
-  const MAIN_ADMIN_USERNAME = 'Al-Samad'
-  const MAIN_ADMIN_PASSWORD = '102030'
-
-  const roleLabels = {
-    admin: 'أدمن رئيسي',
-    sales_manager: 'مدير مبيعات',
-    accountant: 'محاسب',
-    support: 'دعم'
-  }
+const roleLabels = {
+  admin: 'أدمن رئيسي',
+  sales_manager: 'مدير مبيعات',
+  accountant: 'محاسب',
+  support: 'دعم',
 }
+
 const subscriptionTypeOptions = [
   'باقة القمة',
   'باقة التميز',
@@ -45,6 +29,7 @@ const subscriptionTypeOptions = [
 ]
 const durationOptions = [1, 2, 3, 6, 12]
 const SAUDI_COUNTRY_CODE = '966'
+const googleProvider = new GoogleAuthProvider()
 
 const addMonths = (dateString, months) => {
   const date = new Date(dateString)
@@ -264,6 +249,16 @@ const createCustomerDraft = (customer) => ({
   notes: customer.notes || '',
 })
 
+const buildGoogleSessionUser = (firebaseUser) => ({
+  id: firebaseUser.uid,
+  name: firebaseUser.displayName || 'مستخدم Google',
+  username: firebaseUser.email || `google-${firebaseUser.uid}`,
+  role: 'admin',
+  provider: 'google',
+  email: firebaseUser.email || '',
+  avatar: firebaseUser.photoURL || '',
+})
+
 export default function DashboardApp() {
   const [mounted, setMounted] = useState(false)
   const [appState, setAppState] = useState(initialState)
@@ -293,9 +288,14 @@ export default function DashboardApp() {
   useEffect(() => {
     if (!mounted) return
     try {
-      const savedUsername = window.localStorage.getItem(SESSION_USER_KEY)
-      if (!savedUsername) return
-      const matchedUser = appState.users.find((item) => item.username === savedUsername)
+      const savedSession = window.localStorage.getItem(SESSION_USER_KEY)
+      if (!savedSession) return
+      const parsedSession = JSON.parse(savedSession)
+      if (parsedSession?.provider === 'google') {
+        setCurrentUser(parsedSession)
+        return
+      }
+      const matchedUser = appState.users.find((item) => item.username === parsedSession?.username)
       if (matchedUser) {
         setCurrentUser(matchedUser)
       } else {
@@ -310,7 +310,7 @@ export default function DashboardApp() {
     if (!mounted) return
     try {
       if (currentUser?.username) {
-        window.localStorage.setItem(SESSION_USER_KEY, currentUser.username)
+        window.localStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser))
       } else {
         window.localStorage.removeItem(SESSION_USER_KEY)
       }
@@ -318,6 +318,18 @@ export default function DashboardApp() {
       // ignore localStorage persistence failures
     }
   }, [currentUser, mounted])
+
+  useEffect(() => {
+    if (!mounted) return undefined
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setCurrentUser((prev) => (prev?.provider === 'google' && prev?.id === firebaseUser.uid ? prev : buildGoogleSessionUser(firebaseUser)))
+      } else {
+        setCurrentUser((prev) => (prev?.provider === 'google' ? null : prev))
+      }
+    })
+    return () => unsubscribe()
+  }, [mounted])
 
   useEffect(() => {
     if (!message) return undefined
@@ -381,6 +393,18 @@ export default function DashboardApp() {
     setCurrentUser(user)
     addAuditLog('تسجيل دخول', user.username, 'النظام')
     setMessage(`مرحباً ${user.name}`)
+  }
+
+  const handleGoogleLogin = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider)
+      const googleUser = buildGoogleSessionUser(result.user)
+      setCurrentUser(googleUser)
+      addAuditLog('تسجيل دخول عبر Google', googleUser.username, 'النظام')
+      setMessage(`مرحباً ${googleUser.name}`)
+    } catch (error) {
+      setMessage('تعذر تسجيل الدخول عبر Google')
+    }
   }
 
   const handleCustomerSubmit = (event) => {
@@ -661,6 +685,19 @@ export default function DashboardApp() {
     setMessage('تم إعادة ضبط البيانات التجريبية')
   }
 
+  const handleLogout = async () => {
+    window.localStorage.removeItem(SESSION_USER_KEY)
+    if (currentUser?.provider === 'google') {
+      try {
+        await signOut(auth)
+      } catch {
+        // ignore sign out failures and continue local reset
+      }
+    }
+    setCurrentUser(null)
+    setMessage('تم تسجيل الخروج')
+  }
+
   if (!mounted) return <div className="page-shell" />
 
   if (!currentUser) {
@@ -700,13 +737,12 @@ export default function DashboardApp() {
               كلمة المرور
               <input type="password" value={loginData.password} onChange={(e) => setLoginData((prev) => ({ ...prev, password: e.target.value }))} />
             </label>
-   <button
-  className="primary-btn"
-  type="button"
-  onClick={handleGoogleLogin}
->
-  تسجيل الدخول بحساب Google
-</button>
+            <button className="primary-btn" type="submit">دخول للنظام</button>
+            <div className="divider"><span>أو</span></div>
+            <button className="google-btn" type="button" onClick={handleGoogleLogin}>
+              <span className="google-mark">G</span>
+              <span>تسجيل الدخول عبر Google</span>
+            </button>
             {message ? <div className="toast">{message}</div> : null}
           </form>
         </section>
@@ -741,7 +777,7 @@ export default function DashboardApp() {
 
         <div className="sidebar-actions">
           <button className="ghost-btn" onClick={resetDemo}>إعادة البيانات التجريبية</button>
-          <button className="ghost-btn" onClick={() => setCurrentUser(null)}>تسجيل الخروج</button>
+          <button className="ghost-btn" onClick={handleLogout}>تسجيل الخروج</button>
         </div>
       </aside>
 
