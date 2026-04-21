@@ -1,3 +1,6 @@
+import { auth } from "../lib/firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
+
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -5,18 +8,33 @@ import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import * as XLSX from 'xlsx'
 
-const STORAGE_KEY = 'alsmad-next-clean-state-v2'
-const SESSION_USER_KEY = 'alsmad-next-clean-session-user-v1'
-const MAIN_ADMIN_USERNAME = 'Al-Samad'
-const MAIN_ADMIN_PASSWORD = '102030'
+export default function DashboardApp() {
 
-const roleLabels = {
-  admin: 'أدمن رئيسي',
-  sales_manager: 'مدير مبيعات',
-  accountant: 'محاسب',
-  support: 'دعم',
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleLogin = async () => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      alert("تم تسجيل الدخول");
+    } catch (err) {
+      alert("خطأ في تسجيل الدخول");
+      console.error(err);
+    }
+  };
+
+  const STORAGE_KEY = 'alsmad-next-clean-state-v2'
+  const SESSION_USER_KEY = 'alsmad-next-clean-session-user-v1'
+  const MAIN_ADMIN_USERNAME = 'Al-Samad'
+  const MAIN_ADMIN_PASSWORD = '102030'
+
+  const roleLabels = {
+    admin: 'أدمن رئيسي',
+    sales_manager: 'مدير مبيعات',
+    accountant: 'محاسب',
+    support: 'دعم'
+  }
 }
-
 const subscriptionTypeOptions = [
   'باقة القمة',
   'باقة التميز',
