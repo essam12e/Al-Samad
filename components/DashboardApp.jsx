@@ -8,7 +8,7 @@ import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from
 import { auth } from '../lib/firebase'
 
 const STORAGE_KEY = 'alsmad-next-clean-state-v2'
-const SESSION_USER_KEY = 'alsmad-next-clean-session-user-v1'
+const SESSION_USER_KEY = 'alsmad-next-clean-session-user-v2'
 const MAIN_ADMIN_USERNAME = 'Al-Samad'
 const MAIN_ADMIN_PASSWORD = '102030'
 
@@ -403,7 +403,10 @@ export default function DashboardApp() {
       addAuditLog('تسجيل دخول عبر Google', googleUser.username, 'النظام')
       setMessage(`مرحباً ${googleUser.name}`)
     } catch (error) {
-      setMessage('تعذر تسجيل الدخول عبر Google')
+      const errorCode = error?.code || 'unknown-error'
+      const errorMessage = error?.message || 'Unknown Firebase error'
+      console.error('Google login error:', { errorCode, errorMessage, error })
+      setMessage(`تعذر التسجيل عبر Google: ${errorCode}`)
     }
   }
 
@@ -739,6 +742,10 @@ export default function DashboardApp() {
             </label>
             <button className="primary-btn" type="submit">دخول للنظام</button>
             <div className="divider"><span>أو</span></div>
+            <div className="google-box">
+              <strong>دخول سريع وآمن</strong>
+              <p>يمكنك تسجيل الدخول مباشرة بواسطة حساب Google المرتبط بـ Firebase.</p>
+            </div>
             <button className="google-btn" type="button" onClick={handleGoogleLogin}>
               <span className="google-mark">G</span>
               <span>تسجيل الدخول عبر Google</span>
