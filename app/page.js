@@ -1,5 +1,5 @@
-import DashboardApp from '../components/DashboardApp'
+import App from '../components/App'
 
 export default function HomePage() {
-  return <DashboardApp />
+  return <App />
 }
